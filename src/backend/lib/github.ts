@@ -367,11 +367,15 @@ export function getPRStatus(owner: string, repo: string, prNumber: number): PRSt
   }));
 
   // Needs action if:
-  // 1. Latest review is CHANGES_REQUESTED, or
-  // 2. There are COMMENTED reviews with suggestions (owner feedback we should respond to)
-  const lastReview = reviews.length > 0 ? reviews[reviews.length - 1] : null;
-  const hasChangesRequested = reviews.some((r: any) => r.state === "CHANGES_REQUESTED");
-  const hasReviewComments = reviews.some((r: any) => r.state === "COMMENTED" && r.body.length > 0);
+  // 1. Any reviewer's LATEST review is CHANGES_REQUESTED (not just any historical review), or
+  // 2. There are COMMENTED reviews with suggestions that haven't been superseded by APPROVED
+  // Group reviews by author and check only the latest from each reviewer
+  const latestByAuthor = new Map<string, { state: string; body: string }>();
+  for (const r of reviews) {
+    latestByAuthor.set(r.author, { state: r.state, body: r.body });
+  }
+  const hasChangesRequested = Array.from(latestByAuthor.values()).some(r => r.state === "CHANGES_REQUESTED");
+  const hasReviewComments = Array.from(latestByAuthor.values()).some(r => r.state === "COMMENTED" && r.body.length > 0);
   const needsAction = hasChangesRequested || hasReviewComments;
 
   // Parse CI status from statusCheckRollup
