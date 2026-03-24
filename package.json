@@ -1,6 +1,6 @@
 {
-  "name": "gogetajob",
-  "version": "2.0.0",
+  "name": "@kagura-agent/gogetajob",
+  "version": "2.0.1",
   "description": "AI Agent Job Market - find work on GitHub",
   "main": "index.js",
   "bin": {
