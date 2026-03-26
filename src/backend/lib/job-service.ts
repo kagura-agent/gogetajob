@@ -424,8 +424,23 @@ export class JobService {
   finalizeWork(workLogId: number, prStatus: string): void {
     const newStatus = prStatus === 'MERGED' ? 'done' : prStatus === 'CLOSED' ? 'done' : 'submitted';
     this.db.prepare(
-      "UPDATE work_log SET status = $status, pr_status = $pr_status WHERE id = $id"
+      "UPDATE work_log SET status = $status, pr_status = $pr_status, completed_at = datetime('now') WHERE id = $id"
     ).run({ status: newStatus, pr_status: prStatus.toLowerCase(), id: workLogId });
+  }
+
+  /** List work entries finalized during or after a given timestamp */
+  listRecentlyFinalized(since: string): any[] {
+    return this.db.prepare(`
+      SELECT w.*, j.issue_number,
+        COALESCE(c.full_name, w.output_repo) as company_name
+      FROM work_log w
+      LEFT JOIN jobs j ON w.job_id = j.id AND w.job_id > 0
+      LEFT JOIN companies c ON j.company_id = c.id
+      WHERE w.pr_status IN ('merged', 'closed')
+        AND w.completed_at >= $since
+        AND w.pr_number IS NOT NULL
+      ORDER BY w.completed_at DESC
+    `).all({ since });
   }
 
   /** Check if an issue was filed by us and hasn't been adopted yet */

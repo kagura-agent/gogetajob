@@ -903,6 +903,7 @@ program
 
     let merged = 0, needsAction = 0, open = 0, closed = 0;
     let issueAdopted = 0, issueOpen = 0, issueClosed = 0;
+    const newlyFinalized: Array<{ entry: any; state: string }> = [];
 
     for (const entry of prEntries) {
       try {
@@ -921,6 +922,11 @@ program
 
         // Auto-transition taken/submitted → done/closed
         if ((entry.status === "submitted" || entry.status === "taken") && (status.state === "MERGED" || status.state === "CLOSED")) {
+          // Track if the PR was NOT already finalized (pr_status not merged/closed)
+          const wasPreviouslyOpen = !entry.pr_status || !["merged", "closed"].includes(entry.pr_status.toLowerCase());
+          if (wasPreviouslyOpen) {
+            newlyFinalized.push({ entry, state: status.state });
+          }
           svc.finalizeWork(entry.id, status.state);
         }
 
@@ -1031,12 +1037,35 @@ program
       }
     }
 
+    // Report newly merged/closed PRs
+    if (newlyFinalized.length > 0) {
+      console.log(`\n🎉 Newly finalized since last sync:\n`);
+      for (const { entry, state } of newlyFinalized) {
+        let prOwner = "", prRepo = "";
+        if (entry.company_name) {
+          [prOwner, prRepo] = entry.company_name.split("/");
+        }
+        if ((!prOwner || !prRepo) && entry.pr_url) {
+          const m = entry.pr_url.match(/github\.com\/([^/]+)\/([^/]+)\/pull/);
+          if (m) { prOwner = m[1]; prRepo = m[2]; }
+        }
+        const displayName = prOwner && prRepo ? prOwner + "/" + prRepo : entry.company_name || entry.output_repo || "?";
+        const icon = state === "MERGED" ? "✅" : "❌";
+        console.log(`  ${icon} ${displayName}#${entry.issue_number || '?'} PR #${entry.pr_number} — ${state}`);
+      }
+    }
+
     console.log(`\n📊 Summary:`);
     if (prEntries.length > 0) {
       console.log(`  PRs: ${merged} merged | ${open} open | ${closed} closed${needsAction > 0 ? ` | ${needsAction} need action ⚠️` : ""}`);
     }
     if (issueEntries.length > 0) {
       console.log(`  Issues: ${issueAdopted} adopted | ${issueOpen} open | ${issueClosed} closed`);
+    }
+    if (newlyFinalized.length > 0) {
+      const newMerged = newlyFinalized.filter(nf => nf.state === 'MERGED').length;
+      const newClosed = newlyFinalized.filter(nf => nf.state === 'CLOSED').length;
+      console.log(`  Newly finalized: ${newMerged} merged, ${newClosed} closed`);
     }
     console.log();
   });
