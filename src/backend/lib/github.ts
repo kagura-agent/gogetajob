@@ -518,6 +518,63 @@ export function countLabeledIssues(owner: string, repo: string, label: string): 
   }
 }
 
+export interface GitHubPRSummary {
+  repo: string;       // "owner/repo"
+  number: number;
+  title: string;
+  state: string;      // OPEN, MERGED, CLOSED
+  url: string;
+  createdAt: string;
+}
+
+/**
+ * Search all PRs authored by the current user across GitHub.
+ * Uses `gh search prs` which leverages GitHub's search API.
+ * Excludes PRs in repos owned by the user (not "work for others").
+ */
+export function searchAllMyPRs(): GitHubPRSummary[] {
+  const myLogin = getMyLogin();
+  const results: GitHubPRSummary[] = [];
+  const seen = new Set<string>();
+
+  // Query open and closed separately. Closed includes merged PRs —
+  // GitHub search returns state=MERGED for merged PRs in the results.
+  for (const stateFilter of ["open", "closed"] as const) {
+    let raw: any[];
+    try {
+      raw = ghJson(
+        `search prs --author=${myLogin} --state=${stateFilter} --limit 200 --json repository,number,title,state,url,createdAt`
+      );
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(raw)) continue;
+
+    for (const pr of raw) {
+      const repoFullName: string = pr.repository?.nameWithOwner || pr.repository?.name || "";
+      if (!repoFullName) continue;
+      // Exclude own repos (kagura-agent/*)
+      const repoOwner = repoFullName.split("/")[0]?.toLowerCase();
+      if (repoOwner === myLogin.toLowerCase()) continue;
+
+      const key = `${repoFullName}#${pr.number}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      results.push({
+        repo: repoFullName,
+        number: pr.number,
+        title: pr.title || "",
+        state: pr.state || "OPEN",
+        url: pr.url || "",
+        createdAt: pr.createdAt || "",
+      });
+    }
+  }
+
+  return results;
+}
+
 export function getMyPRs(owner: string, repo: string): MyPRInfo[] {
   const myLogin = getMyLogin();
   const raw = ghJson(
