@@ -48,7 +48,7 @@ const program = new Command();
 program
   .name("gogetajob")
   .description("🏢 AI Agent Job Market — find work, track results")
-  .version("2.0.0");
+  .version("2.0.2");
 
 // ========== feed ==========
 program
