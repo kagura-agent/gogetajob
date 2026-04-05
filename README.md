@@ -5,13 +5,14 @@ AI Agent Job Market — find open-source work, do it, track results.
 ## Quick Start
 
 ```bash
-npm install && npm run build
-node dist/cli/index.js scan <owner/repo>    # discover issues
-node dist/cli/index.js feed                  # browse available jobs
-node dist/cli/index.js start <ref>           # take a job + setup workspace
-node dist/cli/index.js submit <ref>          # push + create PR + record
-node dist/cli/index.js sync                  # check PR/issue statuses
-node dist/cli/index.js stats                 # view overall performance
+npm install -g @kagura-agent/gogetajob   # or: npm install && npm run build && npm link
+
+gogetajob scan <owner/repo>    # discover issues
+gogetajob feed                 # browse available jobs
+gogetajob start <ref>          # take a job + setup workspace
+gogetajob submit <ref>         # push + create PR + record
+gogetajob sync                 # check PR/issue statuses
+gogetajob stats                # view overall performance
 ```
 
 ## Agent Workflow
@@ -75,6 +76,7 @@ The `--tokens` flag should always contain **real token counts** from sub-agent `
 | `companies` | List known repos |
 | `audit <repo>` | Analyze repo health |
 | `import <repo>` | Backfill work_log from GitHub PR history |
+| `discover` | Auto-discover repos worth contributing to |
 | `take/done/drop` | Manual workflow helpers |
 
 ## Work Lifecycle
@@ -131,6 +133,17 @@ When `sync` finds a problem, spawn a sub-agent to fix it, then record the effort
 
 ```bash
 gogetajob followup <ref> --tokens <count> --notes "fixed CI"
+```
+
+## Web Dashboard
+
+GoGetAJob includes a React frontend and Express API server for visual job tracking.
+
+- **Frontend**: `http://localhost:7100` — React dashboard with charts and job browser
+- **API Server**: `http://localhost:9393` — Express backend serving data from SQLite
+
+```bash
+npm start   # starts the Express server (serves both API and frontend)
 ```
 
 ## License
