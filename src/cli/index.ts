@@ -29,11 +29,16 @@ function getService(): JobService {
 
 // --- Self-update check ---
 function checkForUpdates(): void {
+  // Skip in CI/subagent to avoid proxy-related SIGKILL (git fetch can hang)
+  if (process.env.CI || process.env.GOGETAJOB_NO_UPDATE_CHECK) return;
   try {
     const { execSync } = require("child_process");
-    const local = execSync("git rev-parse HEAD", { cwd: packageRoot, encoding: "utf-8" }).trim();
-    execSync("git fetch origin main --quiet", { cwd: packageRoot, encoding: "utf-8", timeout: 5000 });
-    const remote = execSync("git rev-parse origin/main", { cwd: packageRoot, encoding: "utf-8" }).trim();
+    const local = execSync("git rev-parse HEAD", { cwd: packageRoot, encoding: "utf-8", timeout: 2000 }).trim();
+    // Use timeout command to hard-kill git fetch if it hangs (proxy/network issues)
+    execSync("timeout 3 git fetch origin main --quiet 2>/dev/null", {
+      cwd: packageRoot, encoding: "utf-8", timeout: 5000, stdio: "ignore"
+    });
+    const remote = execSync("git rev-parse origin/main", { cwd: packageRoot, encoding: "utf-8", timeout: 2000 }).trim();
     if (local !== remote) {
       console.log("⚠️  gogetajob is outdated. Run: cd " + packageRoot + " && git pull && npm run build\n");
     }
