@@ -245,14 +245,28 @@ export function cloneRepo(fullName: string, targetDir: string): string {
         cwd: absDir, encoding: "utf-8", timeout: 5000,
       });
     }
-    exec("git fetch --all", { cwd: absDir, encoding: "utf-8", timeout: 30000 });
+    // Hard-kill fetch after 10s to avoid proxy-related SIGKILL on the parent process
+    try {
+      exec("timeout 10 git fetch --all", { cwd: absDir, encoding: "utf-8", timeout: 15000 });
+    } catch (e: any) {
+      console.warn(`[cloneRepo] git fetch failed (non-fatal, repo exists locally): ${e.message}`);
+    }
     return absDir;
   }
 
-  exec(`git clone --depth 10 ${expectedUrl} ${absDir}`, {
-    encoding: "utf-8",
-    timeout: 60000,
-  });
+  try {
+    exec(`timeout 30 git clone --depth 10 ${expectedUrl} ${absDir}`, {
+      encoding: "utf-8",
+      timeout: 45000,
+    });
+  } catch (e: any) {
+    // If clone failed but repo dir already exists (partial clone), warn instead of throwing
+    if (fs.existsSync(p.join(absDir, ".git"))) {
+      console.warn(`[cloneRepo] git clone failed but repo exists locally: ${e.message}`);
+    } else {
+      throw e;
+    }
+  }
   return absDir;
 }
 
