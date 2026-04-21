@@ -26,6 +26,8 @@ export function registerScanCommand(program: Command): void {
     .description(
       "Scan a repo for open issues and add them as jobs (format: owner/repo)\n\n" +
       "  Use --all to scan all known companies from the database.\n\n" +
+      "  Tip: for large scans, increase heap with:\n" +
+      "    NODE_OPTIONS='--max-old-space-size=512' gogetajob scan --all\n\n" +
       "  Finding repos to scan:\n" +
       "    gh search repos --topic=typescript --sort=stars --limit=10\n" +
       "    gh search repos --language=python --stars='>100' --limit=10\n" +
@@ -34,7 +36,7 @@ export function registerScanCommand(program: Command): void {
     .option("--refresh", "force refresh existing data")
     .option("--label <label>", "only issues with this label")
     .option("--all", "scan all known companies from database")
-    .option("--concurrency <n>", "number of companies to scan in parallel (default: 3)", "3")
+    .option("--concurrency <n>", "number of companies to scan in parallel (default: 1 for --all, 3 otherwise)", undefined)
     .action(async (repoArg: string | undefined, opts: any) => {
       const svc = getService();
 
@@ -44,7 +46,7 @@ export function registerScanCommand(program: Command): void {
           console.log("\nNo companies in database. Add some with `gogetajob scan <owner/repo>`.\n");
           return;
         }
-        const concurrency = Math.max(1, parseInt(opts.concurrency) || 3);
+        const concurrency = Math.max(1, parseInt(opts.concurrency) || 1);
         console.log(`\n🔍 Scanning all ${companies.length} companies (concurrency: ${concurrency})...\n`);
         const limit = await pLimit(concurrency);
         let completed = 0;
@@ -86,7 +88,9 @@ export function registerScanCommand(program: Command): void {
             console.log(`[${completed}/${companies.length}] ${c.full_name} ⭐ ${info.stars} | 📊 ${(prStats.merge_rate * 100).toFixed(0)}%${added > 0 ? ` | 📋 ${added} new` : ""}`);
             if (heapMB > 200) {
               console.warn(`⚠️ High memory usage: ${heapMB.toFixed(0)}MB heap`);
+              global.gc?.();
             }
+            issues.length = 0;
           } catch (e: any) {
             completed++;
             console.error(`[${completed}/${companies.length}] ${c.full_name} ⚠️ ${e.message}`);
