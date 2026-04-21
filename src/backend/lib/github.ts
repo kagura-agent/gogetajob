@@ -41,6 +41,7 @@ function gh(args: string): string {
     return execSync(`gh ${args}`, {
       encoding: "utf-8",
       timeout: 30000,
+      maxBuffer: 10 * 1024 * 1024,
       stdio: ["pipe", "pipe", "pipe"], // capture stderr to avoid noisy 404s
     }).trim();
   } catch (e: any) {
@@ -155,6 +156,7 @@ async function ghA(args: string): Promise<string> {
     const { stdout } = await execAsync(`gh ${args}`, {
       encoding: "utf-8",
       timeout: 30000,
+      maxBuffer: 10 * 1024 * 1024,
     });
     return (stdout || "").trim();
   } catch (e: any) {

@@ -82,7 +82,11 @@ export function registerScanCommand(program: Command): void {
             }
             svc.closeStaleJobs(c.id, openIssueNumbers);
             completed++;
+            const heapMB = process.memoryUsage().heapUsed / (1024 * 1024);
             console.log(`[${completed}/${companies.length}] ${c.full_name} ⭐ ${info.stars} | 📊 ${(prStats.merge_rate * 100).toFixed(0)}%${added > 0 ? ` | 📋 ${added} new` : ""}`);
+            if (heapMB > 200) {
+              console.warn(`⚠️ High memory usage: ${heapMB.toFixed(0)}MB heap`);
+            }
           } catch (e: any) {
             completed++;
             console.error(`[${completed}/${companies.length}] ${c.full_name} ⚠️ ${e.message}`);
