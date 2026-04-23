@@ -36,7 +36,8 @@ export function registerScanCommand(program: Command): void {
     .option("--refresh", "force refresh existing data")
     .option("--label <label>", "only issues with this label")
     .option("--all", "scan all known companies from database")
-    .option("--concurrency <n>", "number of companies to scan in parallel (default: 1 for --all, 3 otherwise)", undefined)
+    .option("--concurrency <n>", "number of companies to scan in parallel (default: 3 for --all)", undefined)
+    .option("--batch <n>", "only scan the first N repos (useful for cron/time-limited contexts)", undefined)
     .action(async (repoArg: string | undefined, opts: any) => {
       const svc = getService();
 
@@ -46,18 +47,33 @@ export function registerScanCommand(program: Command): void {
           console.log("\nNo companies in database. Add some with `gogetajob scan <owner/repo>`.\n");
           return;
         }
-        const concurrency = Math.max(1, parseInt(opts.concurrency) || 1);
-        console.log(`\n🔍 Scanning all ${companies.length} companies (concurrency: ${concurrency})...\n`);
+        const concurrency = Math.max(1, parseInt(opts.concurrency) || 3);
+        const batchSize = opts.batch ? Math.max(1, parseInt(opts.batch)) : companies.length;
+        const toScan = companies.slice(0, batchSize);
+        if (batchSize < companies.length) {
+          console.log(`\n🔍 Scanning first ${toScan.length} of ${companies.length} companies (concurrency: ${concurrency})...\n`);
+        } else {
+          console.log(`\n🔍 Scanning all ${toScan.length} companies (concurrency: ${concurrency})...\n`);
+        }
         const limit = await pLimit(concurrency);
         let completed = 0;
+        const PER_REPO_TIMEOUT = 15_000;
+
+        async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+          let timer: NodeJS.Timeout;
+          const timeout = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`timed out after ${ms / 1000}s`)), ms);
+          });
+          return Promise.race([promise, timeout]).finally(() => clearTimeout(timer!));
+        }
 
         async function scanCompany(c: any) {
           try {
             const [owner, repo] = c.full_name.split("/");
-            const [info, prStats] = await Promise.all([
+            const [info, prStats] = await withTimeout(Promise.all([
               gh.getRepoInfoAsync(owner, repo),
               gh.getPrStatsAsync(owner, repo, 50),
-            ]);
+            ]), PER_REPO_TIMEOUT);
             svc.upsertCompany({
               owner: info.owner, repo: info.repo,
               description: info.description, language: info.language,
@@ -66,7 +82,7 @@ export function registerScanCommand(program: Command): void {
               avg_response_hours: prStats.avg_response_hours !== null ? prStats.avg_response_hours : undefined,
               has_contributing_guide: info.has_contributing, last_commit_at: info.last_push,
             });
-            const issues = await gh.getIssuesAsync(owner, repo, { limit: 50, labels: opts.label });
+            const issues = await withTimeout(gh.getIssuesAsync(owner, repo, { limit: 50, labels: opts.label }), PER_REPO_TIMEOUT);
             let added = 0;
             const openIssueNumbers = new Set<number>();
             for (const issue of issues) {
@@ -85,7 +101,7 @@ export function registerScanCommand(program: Command): void {
             svc.closeStaleJobs(c.id, openIssueNumbers);
             completed++;
             const heapMB = process.memoryUsage().heapUsed / (1024 * 1024);
-            console.log(`[${completed}/${companies.length}] ${c.full_name} ⭐ ${info.stars} | 📊 ${(prStats.merge_rate * 100).toFixed(0)}%${added > 0 ? ` | 📋 ${added} new` : ""}`);
+            console.log(`[${completed}/${toScan.length}] ${c.full_name} ⭐ ${info.stars} | 📊 ${(prStats.merge_rate * 100).toFixed(0)}%${added > 0 ? ` | 📋 ${added} new` : ""}`);
             if (heapMB > 200) {
               console.warn(`⚠️ High memory usage: ${heapMB.toFixed(0)}MB heap`);
               global.gc?.();
@@ -93,11 +109,11 @@ export function registerScanCommand(program: Command): void {
             issues.length = 0;
           } catch (e: any) {
             completed++;
-            console.error(`[${completed}/${companies.length}] ${c.full_name} ⚠️ ${e.message}`);
+            console.error(`[${completed}/${toScan.length}] ${c.full_name} ⚠️ ${e.message}`);
           }
         }
 
-        await Promise.all(companies.map(c => limit(() => scanCompany(c))));
+        await Promise.all(toScan.map(c => limit(() => scanCompany(c))));
         console.log("\nDone!\n");
         return;
       }

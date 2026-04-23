@@ -143,6 +143,7 @@ program
   .option("--refresh", "force refresh existing data")
   .option("--label <label>", "only issues with this label")
   .option("--all", "scan all known companies from database")
+  .option("--batch <n>", "only scan the first N repos (for cron/time-limited contexts)")
   .action(async (repoArg: string | undefined, opts: any) => {
     const svc = getService();
 
@@ -152,8 +153,14 @@ program
         console.log("\nNo companies in database. Add some with `gogetajob scan <owner/repo>`.\n");
         return;
       }
-      console.log(`\n🔍 Scanning all ${companies.length} companies...\n`);
-      for (const c of companies) {
+      const batchSize = opts.batch ? Math.max(1, parseInt(opts.batch)) : companies.length;
+      const toScan = companies.slice(0, batchSize);
+      if (batchSize < companies.length) {
+        console.log(`\n🔍 Scanning first ${toScan.length} of ${companies.length} companies...\n`);
+      } else {
+        console.log(`\n🔍 Scanning all ${toScan.length} companies...\n`);
+      }
+      for (const c of toScan) {
         try {
           const [owner, repo] = c.full_name.split("/");
           console.log(`── ${c.full_name} ──`);
