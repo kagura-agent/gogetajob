@@ -8,6 +8,7 @@ import { JobService } from "../backend/lib/job-service";
 import * as gh from "../backend/lib/github";
 import { formatJob, formatCompany, formatWorkEntry } from "./format";
 import { startWatch, stopWatch, showStatus } from "./watch";
+import { isBlocked, getBlockReason, addToBlocklist, removeFromBlocklist, getBlocklist } from "../backend/lib/blocklist";
 
 // --- DB setup ---
 // Priority: GOGETAJOB_DATA env > package's own data/ dir
@@ -163,6 +164,11 @@ program
       for (const c of toScan) {
         try {
           const [owner, repo] = c.full_name.split("/");
+          if (isBlocked(owner, repo)) {
+            const reason = getBlockReason(owner, repo);
+            console.log(`⛔ ${c.full_name} is blocklisted${reason ? `: ${reason}` : ""}`);
+            continue;
+          }
           console.log(`── ${c.full_name} ──`);
           const info = gh.getRepoInfo(owner, repo);
           const prStats = gh.getPrStats(owner, repo, 50);
@@ -210,6 +216,12 @@ program
     const [owner, repo] = repoArg.split("/");
     if (!owner || !repo) {
       console.error("Error: format should be owner/repo");
+      process.exit(1);
+    }
+
+    if (isBlocked(owner, repo)) {
+      const reason = getBlockReason(owner, repo);
+      console.error(`\n⛔ ${owner}/${repo} is blocklisted${reason ? `: ${reason}` : ""}\n`);
       process.exit(1);
     }
 
@@ -575,6 +587,12 @@ program
     const parsed = parseRef(ref);
     const svc = getService();
 
+    if (isBlocked(parsed.owner, parsed.repo)) {
+      const reason = getBlockReason(parsed.owner, parsed.repo);
+      console.error(`\n⛔ ${parsed.owner}/${parsed.repo} is blocklisted${reason ? `: ${reason}` : ""}\n`);
+      process.exit(1);
+    }
+
     const job = svc.getJob(parsed.owner, parsed.repo, parsed.issue);
     if (!job) {
       console.error(`Job not found: ${ref}. Run \`gogetajob scan ${parsed.owner}/${parsed.repo}\` first.`);
@@ -660,6 +678,12 @@ program
   .action((ref: string, opts: any) => {
     const parsed = parseRef(ref);
     const svc = getService();
+
+    if (isBlocked(parsed.owner, parsed.repo)) {
+      const reason = getBlockReason(parsed.owner, parsed.repo);
+      console.error(`\n⛔ ${parsed.owner}/${parsed.repo} is blocklisted${reason ? `: ${reason}` : ""}\n`);
+      process.exit(1);
+    }
 
     const job = svc.getJob(parsed.owner, parsed.repo, parsed.issue);
     if (!job) {
@@ -1458,6 +1482,54 @@ program
     } else {
       startWatch(opts.every);
     }
+  });
+
+// ========== blocklist ==========
+const blocklistCmd = program
+  .command("blocklist")
+  .description("Manage repo blocklist — prevent scanning/starting/submitting to specific repos");
+
+blocklistCmd
+  .command("add <repo>")
+  .description("Add a repo to the blocklist (format: owner/repo)")
+  .option("--reason <text>", "reason for blocking")
+  .action((repo: string, opts: any) => {
+    if (!repo.includes("/")) {
+      console.error("Error: format should be owner/repo");
+      process.exit(1);
+    }
+    addToBlocklist(repo, opts.reason);
+    console.log(`\n⛔ Added ${repo} to blocklist.`);
+    if (opts.reason) console.log(`   Reason: ${opts.reason}`);
+    console.log();
+  });
+
+blocklistCmd
+  .command("remove <repo>")
+  .description("Remove a repo from the blocklist (format: owner/repo)")
+  .action((repo: string) => {
+    if (!repo.includes("/")) {
+      console.error("Error: format should be owner/repo");
+      process.exit(1);
+    }
+    removeFromBlocklist(repo);
+    console.log(`\n✅ Removed ${repo} from blocklist.\n`);
+  });
+
+blocklistCmd
+  .command("list", { isDefault: true })
+  .description("List all blocked repos")
+  .action(() => {
+    const list = getBlocklist();
+    if (list.length === 0) {
+      console.log("\nNo repos blocked.\n");
+      return;
+    }
+    console.log(`\n⛔ Blocked Repos (${list.length})\n`);
+    for (const entry of list) {
+      console.log(`  • ${entry.repo}${entry.reason ? ` — ${entry.reason}` : ""}`);
+    }
+    console.log();
   });
 
 // Check for updates before running any command

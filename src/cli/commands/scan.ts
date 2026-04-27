@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { getService } from "../shared";
 import * as gh from "../../backend/lib/github";
+import { isBlocked, getBlockReason } from "../../backend/lib/blocklist";
 
 async function pLimit(concurrency: number) {
   const queue: Array<() => void> = [];
@@ -70,6 +71,12 @@ export function registerScanCommand(program: Command): void {
         async function scanCompany(c: any) {
           try {
             const [owner, repo] = c.full_name.split("/");
+            if (isBlocked(owner, repo)) {
+              const reason = getBlockReason(owner, repo);
+              completed++;
+              console.log(`[${completed}/${toScan.length}] ⛔ ${c.full_name} is blocklisted${reason ? `: ${reason}` : ""}`);
+              return;
+            }
             const [info, prStats] = await withTimeout(Promise.all([
               gh.getRepoInfoAsync(owner, repo),
               gh.getPrStatsAsync(owner, repo, 50),
@@ -126,6 +133,12 @@ export function registerScanCommand(program: Command): void {
       const [owner, repo] = repoArg.split("/");
       if (!owner || !repo) {
         console.error("Error: format should be owner/repo");
+        process.exit(1);
+      }
+
+      if (isBlocked(owner, repo)) {
+        const reason = getBlockReason(owner, repo);
+        console.error(`\n⛔ ${owner}/${repo} is blocklisted${reason ? `: ${reason}` : ""}\n`);
         process.exit(1);
       }
 

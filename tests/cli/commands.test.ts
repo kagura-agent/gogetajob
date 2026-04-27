@@ -19,6 +19,7 @@ import { registerCompaniesCommand } from "../../src/cli/commands/companies";
 import { registerImportCommand } from "../../src/cli/commands/import-cmd";
 import { registerAuditCommand } from "../../src/cli/commands/audit";
 import { registerWatchCommand } from "../../src/cli/commands/watch";
+import { registerBlocklistCommand } from "../../src/cli/commands/blocklist";
 
 const allRegisters = [
   { fn: registerFeedCommand, name: "feed" },
@@ -39,6 +40,7 @@ const allRegisters = [
   { fn: registerImportCommand, name: "import" },
   { fn: registerAuditCommand, name: "audit" },
   { fn: registerWatchCommand, name: "watch" },
+  { fn: registerBlocklistCommand, name: "blocklist" },
 ];
 
 describe("CLI commands registration", () => {
@@ -49,7 +51,7 @@ describe("CLI commands registration", () => {
     }
 
     const commandNames = program.commands.map((cmd) => cmd.name());
-    expect(commandNames).toHaveLength(18);
+    expect(commandNames).toHaveLength(19);
 
     for (const { name } of allRegisters) {
       expect(commandNames).toContain(name);

@@ -2,6 +2,7 @@ import { Command } from "commander";
 import path from "path";
 import { getService, parseRef } from "../shared";
 import * as gh from "../../backend/lib/github";
+import { isBlocked, getBlockReason } from "../../backend/lib/blocklist";
 
 export function registerSubmitCommand(program: Command): void {
   program
@@ -14,6 +15,12 @@ export function registerSubmitCommand(program: Command): void {
     .action((ref: string, opts: any) => {
       const parsed = parseRef(ref);
       const svc = getService();
+
+      if (isBlocked(parsed.owner, parsed.repo)) {
+        const reason = getBlockReason(parsed.owner, parsed.repo);
+        console.error(`\n⛔ ${parsed.owner}/${parsed.repo} is blocklisted${reason ? `: ${reason}` : ""}\n`);
+        process.exit(1);
+      }
 
       const job = svc.getJob(parsed.owner, parsed.repo, parsed.issue);
       if (!job) {
@@ -55,32 +62,61 @@ export function registerSubmitCommand(program: Command): void {
           process.exit(1);
         }
       } else {
+        let ahead: string | null = null;
         try {
-          const ahead = exec("git rev-list --count @{u}..HEAD", { cwd: repoDir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+          ahead = exec("git rev-list --count @{u}..HEAD", { cwd: repoDir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+        } catch {
+          // No upstream tracking branch — fall through to commit count check
+        }
+
+        if (ahead !== null) {
           if (ahead === "0") {
             console.error(`  ❌ No changes to submit. Make some changes first!`);
             process.exit(1);
           }
           console.log(`  ℹ️  No uncommitted changes — using ${ahead} existing commit(s)`);
-        } catch {
+        } else {
+          // No upstream set — check if there are any commits at all
+          let commitCount = 0;
           try {
-            const logCount = exec("git rev-list --count HEAD", { cwd: repoDir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
-            if (parseInt(logCount) > 0) {
-              console.log(`  ℹ️  No uncommitted changes — using existing commits`);
-            } else {
-              console.error(`  ❌ No changes to submit. Make some changes first!`);
-              process.exit(1);
-            }
+            commitCount = parseInt(exec("git rev-list --count HEAD", { cwd: repoDir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim()) || 0;
           } catch {
-            console.log(`  ℹ️  No uncommitted changes — using existing commits`);
+            // git failed entirely — assume there are commits and let push sort it out
           }
+          if (commitCount === 0) {
+            console.error(`  ❌ No changes to submit. Make some changes first!`);
+            process.exit(1);
+          }
+          console.log(`  ℹ️  No uncommitted changes — using existing commits`);
         }
       }
 
       const prTitle = opts.title || `fix: ${job.title}`;
-      const prBody = `Fixes #${parsed.issue}\n\n${opts.notes || "Automated PR via GoGetAJob"}`;
+      let prBody = `Fixes #${parsed.issue}\n\n${opts.notes || "Automated PR via GoGetAJob"}`;
+
+      // New repo: auto-append AI disclosure to PR body
+      let disclosureAppended = false;
+      try {
+        const { execSync: execCheck } = require("child_process");
+        const mergedCount = execCheck(
+          `gh pr list --repo ${parsed.owner}/${parsed.repo} --author=kagura-agent --state=merged --json number --jq 'length'`,
+          { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
+        ).trim();
+        if (parseInt(mergedCount || "0") === 0) {
+          const DISCLOSURE = `\n\n---\n\n🤖 **Disclosure:** This PR was authored by [Kagura](https://github.com/kagura-agent), an AI agent. Open source contribution is one of the things I do — you can see my work history [here](https://github.com/kagura-agent/github-contribution). If you'd prefer not to receive AI-authored PRs, just let me know and I'll stop — no hard feelings.`;
+          if (!prBody.includes("Disclosure:")) {
+            prBody += DISCLOSURE;
+            disclosureAppended = true;
+          }
+        }
+      } catch {
+        // gh command failed — skip (network issues etc)
+      }
 
       try {
+        if (disclosureAppended) {
+          console.log(`  🤖 New repo detected — AI disclosure auto-appended to PR body`);
+        }
         const prUrl = gh.pushAndCreatePR(
           repoDir,
           parsed.owner,

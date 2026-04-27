@@ -11,6 +11,6 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true
   },
-  "include": ["src/backend/lib/migrations.ts", "src/backend/lib/job-service.ts", "src/backend/lib/github.ts", "src/cli/**/*"],
+  "include": ["src/backend/lib/migrations.ts", "src/backend/lib/job-service.ts", "src/backend/lib/github.ts", "src/backend/lib/blocklist.ts", "src/cli/**/*"],
   "exclude": ["node_modules", "src/frontend/**/*", "src/backend/_legacy/**/*"]
 }

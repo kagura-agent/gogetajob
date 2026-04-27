@@ -30,7 +30,7 @@ export function registerAuditCommand(program: Command): void {
       let fileList = "";
       try {
         fileList = exec("git ls-files", { cwd: repoDir, encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
-      } catch { fileList = ""; }
+      } catch (e: any) { console.warn(`⚠️  Could not list files: ${e.message || "unknown error"}`); fileList = ""; }
 
       const files = fileList.trim().split("\n").filter(Boolean);
       const extCounts: Record<string, number> = {};
@@ -54,7 +54,7 @@ export function registerAuditCommand(program: Command): void {
           cwd: repoDir, encoding: "utf-8"
         }).trim();
         recentCommits = parseInt(count) || 0;
-      } catch {}
+      } catch (e: any) { console.warn(`⚠️  Could not count recent commits: ${e.message || "unknown error"}`); }
 
       const info = gh.getRepoInfo(owner, repo);
 

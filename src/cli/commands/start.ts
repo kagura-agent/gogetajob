@@ -2,6 +2,7 @@ import { Command } from "commander";
 import path from "path";
 import { getService, parseRef } from "../shared";
 import * as gh from "../../backend/lib/github";
+import { isBlocked, getBlockReason } from "../../backend/lib/blocklist";
 
 export function registerStartCommand(program: Command): void {
   program
@@ -12,6 +13,12 @@ export function registerStartCommand(program: Command): void {
     .action((ref: string, opts: any) => {
       const parsed = parseRef(ref);
       const svc = getService();
+
+      if (isBlocked(parsed.owner, parsed.repo)) {
+        const reason = getBlockReason(parsed.owner, parsed.repo);
+        console.error(`\n⛔ ${parsed.owner}/${parsed.repo} is blocklisted${reason ? `: ${reason}` : ""}\n`);
+        process.exit(1);
+      }
 
       const job = svc.getJob(parsed.owner, parsed.repo, parsed.issue);
       if (!job) {
