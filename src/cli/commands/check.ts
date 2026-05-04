@@ -83,6 +83,48 @@ export function registerCheckCommand(program: Command): void {
         if (signal === "go") signal = "caution";
       }
 
+      // Check: how many open PRs do we already have in this repo?
+      try {
+        const myOpenPRs = gh.getMyOpenPRCount(parsed.owner, parsed.repo);
+        if (myOpenPRs > 3) {
+          verdicts.push(`You have ${myOpenPRs} open PRs here — close or merge some first`);
+          signal = "skip";
+        } else if (myOpenPRs >= 2) {
+          verdicts.push(`You have ${myOpenPRs} open PRs here — maintainers may deprioritize new ones`);
+          if (signal === "go") signal = "caution";
+        }
+      } catch (e: any) {
+        console.warn(`[check] Could not fetch open PR count: ${e.message}`);
+      }
+
+      // Check: does this repo actually merge external contributions?
+      try {
+        const extRate = gh.getExternalMergeRate(parsed.owner, parsed.repo);
+        if (extRate.externalRate === 0 && extRate.total >= 5) {
+          verdicts.push(`No external PRs merged in last ${extRate.total} merges — maintainers may not accept outside contributions`);
+          signal = "skip";
+        } else if (extRate.externalRate < 0.2 && extRate.total >= 5) {
+          verdicts.push(`Only ${(extRate.externalRate * 100).toFixed(0)}% of recent merges are from external contributors`);
+          if (signal === "go") signal = "caution";
+        }
+      } catch (e: any) {
+        console.warn(`[check] Could not fetch external merge rate: ${e.message}`);
+      }
+
+      // Check: is a maintainer already active on this issue?
+      try {
+        const maintainerActivity = gh.getMaintainerIssueActivity(parsed.owner, parsed.repo, parsed.issue);
+        if (maintainerActivity.hasMaintainerComment && maintainerActivity.latestMaintainerDate) {
+          const daysSince = (Date.now() - new Date(maintainerActivity.latestMaintainerDate).getTime()) / 86400000;
+          if (daysSince <= 3) {
+            verdicts.push("Maintainer commented in last 3 days — they may be fixing this themselves");
+            if (signal === "go") signal = "caution";
+          }
+        }
+      } catch (e: any) {
+        console.warn(`[check] Could not fetch maintainer activity: ${e.message}`);
+      }
+
       if (verdicts.length === 0) {
         verdicts.push("Looks open and healthy. Go for it!");
       }

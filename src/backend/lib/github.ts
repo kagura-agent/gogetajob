@@ -705,6 +705,59 @@ export function searchAllMyPRs(): GitHubPRSummary[] {
   return results;
 }
 
+/** Count how many open PRs the current user has in this repo */
+export function getMyOpenPRCount(owner: string, repo: string): number {
+  try {
+    const myLogin = getMyLogin();
+    const prs = ghJson(
+      `pr list -R ${owner}/${repo} --author ${myLogin} --state open --json number --limit 50`
+    );
+    return Array.isArray(prs) ? prs.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Check what % of recently merged PRs are from external contributors */
+export function getExternalMergeRate(owner: string, repo: string, limit: number = 20): { total: number; external: number; externalRate: number } {
+  try {
+    const raw = gh(
+      `api "repos/${owner}/${repo}/pulls?state=closed&sort=updated&direction=desc&per_page=${limit}" --jq '[.[] | select(.merged_at != null) | {assoc: .author_association}]'`
+    );
+    if (!raw) return { total: 0, external: 0, externalRate: 0 };
+    const merged: Array<{ assoc: string }> = JSON.parse(raw);
+    const internal = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+    const externalCount = merged.filter(p => !internal.has(p.assoc)).length;
+    return {
+      total: merged.length,
+      external: externalCount,
+      externalRate: merged.length > 0 ? externalCount / merged.length : 0,
+    };
+  } catch {
+    return { total: 0, external: 0, externalRate: 0 };
+  }
+}
+
+/** Check if a maintainer has recently commented on an issue */
+export function getMaintainerIssueActivity(owner: string, repo: string, issueNumber: number): { hasMaintainerComment: boolean; latestMaintainerDate: string | null; latestMaintainerBody: string | null } {
+  try {
+    const raw = gh(
+      `api "repos/${owner}/${repo}/issues/${issueNumber}/comments" --jq '[.[] | {assoc: .author_association, date: .created_at, body: .body}]'`
+    );
+    if (!raw) return { hasMaintainerComment: false, latestMaintainerDate: null, latestMaintainerBody: null };
+    const comments: Array<{ assoc: string; date: string; body: string }> = JSON.parse(raw);
+    const maintainer = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+    const maintainerComments = comments.filter(c => maintainer.has(c.assoc));
+    if (maintainerComments.length === 0) {
+      return { hasMaintainerComment: false, latestMaintainerDate: null, latestMaintainerBody: null };
+    }
+    const latest = maintainerComments[maintainerComments.length - 1];
+    return { hasMaintainerComment: true, latestMaintainerDate: latest.date, latestMaintainerBody: latest.body };
+  } catch {
+    return { hasMaintainerComment: false, latestMaintainerDate: null, latestMaintainerBody: null };
+  }
+}
+
 export function getMyPRs(owner: string, repo: string): MyPRInfo[] {
   const myLogin = getMyLogin();
   const raw = ghJson(
