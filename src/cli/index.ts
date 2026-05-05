@@ -667,6 +667,66 @@ program
     console.log(`   gogetajob submit ${ref} --tokens <real_token_count>\n`);
   });
 
+// ========== pre-submit checks ==========
+// Non-blocking warnings based on PR-superseded lessons (wiki/cards/pr-superseded-lessons.md)
+function runPreSubmitChecks(owner: string, repo: string, issue: number, repoDir: string): void {
+  const { execSync } = require("child_process");
+  const warnings: string[] = [];
+
+  // CHECK 1: Competing PRs for the same issue
+  try {
+    const competing = execSync(
+      `gh pr list --repo ${owner}/${repo} --search "#${issue}" --state open --json number,author --jq '[.[] | select(.author.login != "kagura-agent")] | length'`,
+      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
+    ).trim();
+    if (parseInt(competing || "0") > 0) {
+      warnings.push(`COMPETING_PR: ${competing} other open PR(s) referencing issue #${issue}`);
+    }
+  } catch { /* skip */ }
+
+  // CHECK 2: Maintainer indicated they're working on it
+  try {
+    const lastMaintainerComment = execSync(
+      `gh api repos/${owner}/${repo}/issues/${issue}/comments --jq '[.[] | select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")] | last | .body // ""'`,
+      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
+    ).trim().toLowerCase();
+    if (lastMaintainerComment && (lastMaintainerComment.includes("investigating") || lastMaintainerComment.includes("working on") || lastMaintainerComment.includes("fix coming") || lastMaintainerComment.includes("i'll fix"))) {
+      warnings.push(`MAINTAINER_ACTIVE: Maintainer indicated they're working on this issue`);
+    }
+  } catch { /* skip */ }
+
+  // CHECK 3: Fix already in main? Issue referenced in recent upstream commits
+  try {
+    execSync(`git fetch upstream main 2>/dev/null || git fetch origin main 2>/dev/null`, { cwd: repoDir, stdio: ["pipe", "pipe", "pipe"] });
+    const mainLog = execSync(
+      `git log upstream/main --oneline -20 2>/dev/null || git log origin/main --oneline -20 2>/dev/null`,
+      { cwd: repoDir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
+    ).trim();
+    if (mainLog.includes(`#${issue}`)) {
+      warnings.push(`ALREADY_IN_MAIN: Issue #${issue} referenced in recent main commits — may already be fixed`);
+    }
+  } catch { /* skip */ }
+
+  // CHECK 4: External merge gate closed?
+  try {
+    const externalMerged = execSync(
+      `gh pr list --repo ${owner}/${repo} --state merged --limit 15 --json author --jq '[.[] | select(.author.login != "${owner}")] | length'`,
+      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
+    ).trim();
+    if (parseInt(externalMerged || "0") === 0) {
+      warnings.push(`MERGE_GATE_CLOSED: 0 external PRs merged in last 15 — repo may not accept outside contributions`);
+    }
+  } catch { /* skip */ }
+
+  if (warnings.length > 0) {
+    console.log(`\n🔍 Pre-submit checks:`);
+    for (const w of warnings) {
+      console.log(`   ⚠️  ${w}`);
+    }
+    console.log(`   (warnings only — proceeding)\n`);
+  }
+}
+
 // ========== submit ==========
 program
   .command("submit <ref>")
@@ -675,6 +735,7 @@ program
   .option("--tokens <count>", "tokens consumed")
   .option("--notes <text>", "completion notes")
   .option("--dir <path>", "work directory", "~/repos/forks")
+  .option("--skip-checks", "skip pre-submit safety checks")
   .action((ref: string, opts: any) => {
     const parsed = parseRef(ref);
     const svc = getService();
@@ -692,6 +753,11 @@ program
     }
 
     const repoDir = path.join(opts.dir, parsed.repo);
+
+    // Run pre-submit safety checks
+    if (!opts.skipChecks) {
+      runPreSubmitChecks(parsed.owner, parsed.repo, parsed.issue, repoDir);
+    }
     const { existsSync } = require("fs");
     if (!existsSync(path.join(repoDir, ".git"))) {
       console.error(`❌ No repo found at ${repoDir}. Did you run \`gogetajob start ${ref}\` first?`);
