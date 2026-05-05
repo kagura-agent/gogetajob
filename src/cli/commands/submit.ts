@@ -4,6 +4,69 @@ import { getService, parseRef } from "../shared";
 import * as gh from "../../backend/lib/github";
 import { isBlocked, getBlockReason } from "../../backend/lib/blocklist";
 
+/**
+ * Pre-submit safety checks based on PR-superseded lessons.
+ * These are warnings (non-blocking) to flag likely issues before creating a PR.
+ * See wiki/cards/pr-superseded-lessons.md for full context.
+ */
+function runPreSubmitChecks(owner: string, repo: string, issue: number, repoDir: string): void {
+  const { execSync } = require("child_process");
+  const warnings: string[] = [];
+
+  // CHECK 1: Competing PRs for the same issue
+  try {
+    const competing = execSync(
+      `gh pr list --repo ${owner}/${repo} --search "fixes #${issue} OR closes #${issue} OR resolves #${issue}" --state open --json number,author --jq '[.[] | select(.author.login != "kagura-agent")] | length'`,
+      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
+    ).trim();
+    if (parseInt(competing || "0") > 0) {
+      warnings.push(`\u26a0\ufe0f  COMPETING_PR: ${competing} other open PR(s) targeting issue #${issue}. Check if maintainer or others already have a fix.`);
+    }
+  } catch { /* gh unavailable or network issue — skip */ }
+
+  // CHECK 2: Maintainer activity on the issue (recent comments)
+  try {
+    const recentComments = execSync(
+      `gh api repos/${owner}/${repo}/issues/${issue}/comments --jq '[.[] | select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")] | last | .body // ""'`,
+      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
+    ).trim();
+    if (recentComments && (recentComments.toLowerCase().includes("investigating") || recentComments.toLowerCase().includes("working on") || recentComments.toLowerCase().includes("fix coming"))) {
+      warnings.push(`\u26a0\ufe0f  MAINTAINER_ACTIVE: Maintainer indicated they're working on this. Your PR may be superseded.`);
+    }
+  } catch { /* skip */ }
+
+  // CHECK 3: Fix already in main? Check if issue is referenced in recent commits
+  try {
+    execSync(`git fetch upstream main 2>/dev/null || git fetch origin main 2>/dev/null`, { cwd: repoDir, stdio: ["pipe", "pipe", "pipe"] });
+    const mainRef = execSync(
+      `git log upstream/main --oneline -20 2>/dev/null || git log origin/main --oneline -20 2>/dev/null`,
+      { cwd: repoDir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
+    ).trim();
+    if (mainRef.includes(`#${issue}`)) {
+      warnings.push(`\u26a0\ufe0f  ALREADY_IN_MAIN: Issue #${issue} referenced in recent main commits. It may already be fixed.`);
+    }
+  } catch { /* skip */ }
+
+  // CHECK 4: External merge gate — are external PRs being merged?
+  try {
+    const mergedPRs = execSync(
+      `gh pr list --repo ${owner}/${repo} --state merged --limit 15 --json author --jq '[.[] | select(.author.login != "${owner}")] | length'`,
+      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
+    ).trim();
+    if (parseInt(mergedPRs || "0") === 0) {
+      warnings.push(`\u26a0\ufe0f  MERGE_GATE_CLOSED: No external PRs merged in recent history. This repo may not accept outside contributions.`);
+    }
+  } catch { /* skip */ }
+
+  if (warnings.length > 0) {
+    console.log(`\n\ud83d\udd0d Pre-submit checks (from PR-superseded lessons):\n`);
+    for (const w of warnings) {
+      console.log(`   ${w}`);
+    }
+    console.log(`\n   Proceeding anyway \u2014 these are warnings, not blockers.\n`);
+  }
+}
+
 export function registerSubmitCommand(program: Command): void {
   program
     .command("submit <ref>")
@@ -12,6 +75,7 @@ export function registerSubmitCommand(program: Command): void {
     .option("--tokens <count>", "tokens consumed")
     .option("--notes <text>", "completion notes")
     .option("--dir <path>", "work directory", "~/repos/forks")
+    .option("--skip-checks", "skip pre-submit safety checks")
     .action((ref: string, opts: any) => {
       const parsed = parseRef(ref);
       const svc = getService();
@@ -20,6 +84,12 @@ export function registerSubmitCommand(program: Command): void {
         const reason = getBlockReason(parsed.owner, parsed.repo);
         console.error(`\n⛔ ${parsed.owner}/${parsed.repo} is blocklisted${reason ? `: ${reason}` : ""}\n`);
         process.exit(1);
+      }
+
+      // Run pre-submit safety checks (non-blocking warnings)
+      if (!opts.skipChecks) {
+        const repoDir = path.join(opts.dir, parsed.repo);
+        runPreSubmitChecks(parsed.owner, parsed.repo, parsed.issue, repoDir);
       }
 
       const job = svc.getJob(parsed.owner, parsed.repo, parsed.issue);
