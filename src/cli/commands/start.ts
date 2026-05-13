@@ -10,6 +10,7 @@ export function registerStartCommand(program: Command): void {
     .description("Take a job + fork/clone/branch — ready to code (format: owner/repo#issue_number)")
     .option("--dir <path>", "custom work directory", "~/repos/forks")
     .option("--force", "override self-filed issue guard")
+    .option("--force-size", "override repo size limit")
     .action((ref: string, opts: any) => {
       const parsed = parseRef(ref);
       const svc = getService();
@@ -36,6 +37,19 @@ export function registerStartCommand(program: Command): void {
       }
 
       console.log(`\n🚀 Starting work on ${ref}...\n`);
+
+      // Check repo size before cloning
+      const company = svc.getCompany(parsed.owner, parsed.repo);
+      const diskUsageKb = company?.disk_usage_kb;
+      if (diskUsageKb) {
+        const sizeMB = Math.round(diskUsageKb / 1024);
+        if (diskUsageKb > 500 * 1024 && !opts.forceSize) {
+          console.error(`\n⛔ Repo too large (${sizeMB}MB, limit 500MB). Use --force-size to override.\n`);
+          process.exit(1);
+        } else if (diskUsageKb > 200 * 1024) {
+          console.log(`  ⚠️  Large repo (${sizeMB}MB). Clone may be slow.`);
+        }
+      }
 
       try {
         svc.takeJob(job.id);

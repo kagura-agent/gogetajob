@@ -88,6 +88,7 @@ export function registerScanCommand(program: Command): void {
               pr_merge_rate: prStats.merge_rate,
               avg_response_hours: prStats.avg_response_hours !== null ? prStats.avg_response_hours : undefined,
               has_contributing_guide: info.has_contributing, last_commit_at: info.last_push,
+              disk_usage_kb: info.disk_usage_kb,
             });
             const issues = await withTimeout(gh.getIssuesAsync(owner, repo, { limit: 50, labels: opts.label }), PER_REPO_TIMEOUT);
             let added = 0;
@@ -159,9 +160,10 @@ export function registerScanCommand(program: Command): void {
         avg_response_hours: prStats.avg_response_hours !== null ? prStats.avg_response_hours : undefined,
         has_contributing_guide: info.has_contributing,
         last_commit_at: info.last_push,
+        disk_usage_kb: info.disk_usage_kb,
       });
 
-      console.log(`  ⭐ ${info.stars} stars | 📊 ${(prStats.merge_rate * 100).toFixed(0)}% merge rate | ${prStats.total} PRs analyzed`);
+      console.log(`  ⭐ ${info.stars} stars | 📦 ${(info.disk_usage_kb / 1024).toFixed(0)} MB | 📊 ${(prStats.merge_rate * 100).toFixed(0)}% merge rate | ${prStats.total} PRs analyzed`);
 
       // 2. Get issues
       const issues = gh.getIssues(owner, repo, {

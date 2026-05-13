@@ -10,6 +10,9 @@ export function formatJob(job: Job, index?: number): string {
     : "";
   const prFlag = job.has_pr ? chalk.red(" 🔴 PR exists") : "";
   const commentInfo = job.comments_count > 0 ? chalk.gray(` 💬${job.comments_count}`) : "";
+  const repoSize = job.company_disk_usage_kb
+    ? chalk.blue(` 📦 ${(job.company_disk_usage_kb / 1024).toFixed(0)} MB`)
+    : "";
 
   // Body summary: first meaningful line, max 150 chars
   let bodySummary = "";
@@ -25,7 +28,7 @@ export function formatJob(job: Job, index?: number): string {
   }
 
   return [
-    `${prefix} ${type}${difficulty}${bounty}${prFlag}${commentInfo} ${chalk.bold(job.title)}`,
+    `${prefix} ${type}${difficulty}${bounty}${prFlag}${repoSize}${commentInfo} ${chalk.bold(job.title)}`,
     `   ${chalk.gray(job.company_name || "")} #${job.issue_number}`,
     job.labels && job.labels.length > 0
       ? `   ${job.labels.map((l: string) => chalk.magenta(l)).join(" ")}`

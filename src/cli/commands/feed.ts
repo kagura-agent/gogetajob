@@ -9,12 +9,16 @@ export function registerFeedCommand(program: Command): void {
     .option("--lang <language>", "filter by programming language")
     .option("--type <type>", "filter by type: bug, feature, docs, test, refactor")
     .option("--limit <n>", "max results", "20")
+    .option("--max-size <n>", "skip repos larger than N MB")
+    .option("--no-pr", "only show issues without existing PRs")
     .action((opts: any) => {
       const svc = getService();
       const jobs = svc.listJobs({
         lang: opts.lang,
         type: opts.type,
         limit: parseInt(opts.limit),
+        maxSizeMB: opts.maxSize ? parseInt(opts.maxSize) : undefined,
+        noPr: opts.pr === false ? true : undefined,
       });
 
       if (jobs.length === 0) {

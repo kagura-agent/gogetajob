@@ -15,6 +15,7 @@ export interface CompanyProfile {
   has_contributing_guide: boolean;
   has_cla: boolean;
   last_commit_at: string | null;
+  disk_usage_kb: number | null;
   last_scanned_at: string | null;
 }
 
@@ -35,6 +36,7 @@ export interface Job {
   has_pr: boolean;
   company_name?: string;
   company_language?: string;
+  company_disk_usage_kb?: number | null;
 }
 
 export interface WorkEntry {
@@ -71,12 +73,13 @@ export class JobService {
     has_contributing_guide?: boolean;
     has_cla?: boolean;
     last_commit_at?: string;
+    disk_usage_kb?: number;
   }): number {
     const stmt = this.db.prepare(`
       INSERT INTO companies (owner, repo, full_name, description, language, stars, forks, open_issues,
-        pr_merge_rate, avg_response_hours, has_contributing_guide, has_cla, last_commit_at, last_scanned_at)
+        pr_merge_rate, avg_response_hours, has_contributing_guide, has_cla, last_commit_at, disk_usage_kb, last_scanned_at)
       VALUES ($owner, $repo, $full_name, $description, $language, $stars, $forks, $open_issues,
-        $pr_merge_rate, $avg_response_hours, $has_contributing_guide, $has_cla, $last_commit_at, datetime('now'))
+        $pr_merge_rate, $avg_response_hours, $has_contributing_guide, $has_cla, $last_commit_at, $disk_usage_kb, datetime('now'))
       ON CONFLICT(owner, repo) DO UPDATE SET
         description = COALESCE($description, description),
         language = COALESCE($language, language),
@@ -88,6 +91,7 @@ export class JobService {
         has_contributing_guide = COALESCE($has_contributing_guide, has_contributing_guide),
         has_cla = COALESCE($has_cla, has_cla),
         last_commit_at = COALESCE($last_commit_at, last_commit_at),
+        disk_usage_kb = COALESCE($disk_usage_kb, disk_usage_kb),
         last_scanned_at = datetime('now')
     `);
     const params = {
@@ -104,6 +108,7 @@ export class JobService {
       has_contributing_guide: data.has_contributing_guide ? 1 : 0,
       has_cla: data.has_cla ? 1 : 0,
       last_commit_at: data.last_commit_at ?? null,
+      disk_usage_kb: data.disk_usage_kb ?? null,
     };
     const result = stmt.run(params);
     if (result.changes > 0 && result.lastInsertRowid) {
@@ -209,7 +214,7 @@ export class JobService {
     return closed;
   }
 
-  listJobs(filters: { lang?: string; type?: string; limit?: number } = {}): Job[] {
+  listJobs(filters: { lang?: string; type?: string; limit?: number; maxSizeMB?: number; noPr?: boolean } = {}): Job[] {
     const conditions: string[] = ["j.state = 'open'"];
     const params: Record<string, any> = {};
 
@@ -222,11 +227,19 @@ export class JobService {
       params.type = filters.type;
     }
 
+    if (filters.maxSizeMB) {
+      conditions.push("c.disk_usage_kb <= $maxSizeKb");
+      params.maxSizeKb = filters.maxSizeMB * 1024;
+    }
+    if (filters.noPr) {
+      conditions.push("j.has_pr = 0");
+    }
+
     params.limit = filters.limit ?? 20;
     const where = conditions.join(" AND ");
 
     const rows = this.db.prepare(`
-      SELECT j.*, c.full_name as company_name, c.language as company_language
+      SELECT j.*, c.full_name as company_name, c.language as company_language, c.disk_usage_kb as company_disk_usage_kb
       FROM jobs j
       JOIN companies c ON j.company_id = c.id
       WHERE ${where}
@@ -244,6 +257,7 @@ export class JobService {
       has_bounty: !!r.has_bounty,
       has_pr: !!r.has_pr,
       comments_count: r.comments_count ?? 0,
+      company_disk_usage_kb: r.company_disk_usage_kb ?? null,
     }));
   }
 

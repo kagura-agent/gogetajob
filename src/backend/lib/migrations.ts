@@ -141,4 +141,11 @@ export function runMigrations(db: Database.Database): void {
   if (!wlColNames5.includes('filed_by')) {
     db.exec(`ALTER TABLE work_log ADD COLUMN filed_by TEXT`);
   }
+
+  // Migration 6: add disk_usage_kb to companies
+  const companyCols = db.prepare(`PRAGMA table_info(companies)`).all() as any[];
+  const companyColNames = companyCols.map((c: any) => c.name);
+  if (!companyColNames.includes('disk_usage_kb')) {
+    db.exec(`ALTER TABLE companies ADD COLUMN disk_usage_kb INTEGER`);
+  }
 }

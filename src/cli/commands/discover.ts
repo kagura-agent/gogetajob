@@ -12,6 +12,8 @@ export function registerDiscoverCommand(program: Command): void {
     .option("--active-days <n>", "max days since last push", "30")
     .option("--limit <n>", "number of candidates to evaluate", "10")
     .option("--topic <topic>", "filter by topic")
+    .option("--keywords <words>", "search keywords to filter results (e.g. 'agent mcp ai')")
+    .option("--exclude <repos>", "comma-separated owner/repo to exclude")
     .option("--auto-add", "automatically scan top recommended repos")
     .action(async (opts: any) => {
       const language = opts.language;
@@ -19,8 +21,10 @@ export function registerDiscoverCommand(program: Command): void {
       const maxStars = parseInt(opts.maxStars);
       const activeDays = parseInt(opts.activeDays);
       const limit = parseInt(opts.limit);
+      const keywords = opts.keywords;
+      const exclude = opts.exclude ? opts.exclude.split(",").map((s: string) => s.trim()) : [];
 
-      console.log(`\n🔍 Discovering repos (language=${language}, stars=${minStars}..${maxStars}, active within ${activeDays}d)...\n`);
+      console.log(`\n🔍 Discovering repos (language=${language}, stars=${minStars}..${maxStars}, active within ${activeDays}d${keywords ? `, keywords="${keywords}"` : ""})...\n`);
 
       const candidates = gh.searchRepos({
         language,
@@ -29,6 +33,8 @@ export function registerDiscoverCommand(program: Command): void {
         activeDays,
         limit,
         topic: opts.topic,
+        keywords,
+        exclude,
       });
 
       if (candidates.length === 0) {

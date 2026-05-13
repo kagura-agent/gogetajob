@@ -13,6 +13,7 @@ export interface RepoInfo {
   stars: number;
   forks: number;
   open_issues: number;
+  disk_usage_kb: number;
   last_push: string;
   has_contributing: boolean;
 }
@@ -57,7 +58,7 @@ function ghJson(args: string): any {
 
 export function getRepoInfo(owner: string, repo: string): RepoInfo {
   const data = ghJson(
-    `repo view ${owner}/${repo} --json name,description,primaryLanguage,stargazerCount,forkCount,issues,pushedAt`
+    `repo view ${owner}/${repo} --json name,description,primaryLanguage,stargazerCount,forkCount,issues,pushedAt,diskUsage`
   );
 
   // Check if CONTRIBUTING.md exists
@@ -75,6 +76,7 @@ export function getRepoInfo(owner: string, repo: string): RepoInfo {
     stars: data.stargazerCount,
     forks: data.forkCount,
     open_issues: data.issues?.totalCount || 0,
+    disk_usage_kb: data.diskUsage || 0,
     last_push: data.pushedAt,
     has_contributing: hasContributing,
   };
@@ -172,7 +174,7 @@ async function ghJsonA(args: string): Promise<any> {
 
 export async function getRepoInfoAsync(owner: string, repo: string): Promise<RepoInfo> {
   const data = await ghJsonA(
-    `repo view ${owner}/${repo} --json name,description,primaryLanguage,stargazerCount,forkCount,issues,pushedAt`
+    `repo view ${owner}/${repo} --json name,description,primaryLanguage,stargazerCount,forkCount,issues,pushedAt,diskUsage`
   );
 
   let hasContributing = false;
@@ -189,6 +191,7 @@ export async function getRepoInfoAsync(owner: string, repo: string): Promise<Rep
     stars: data.stargazerCount,
     forks: data.forkCount,
     open_issues: data.issues?.totalCount || 0,
+    disk_usage_kb: data.diskUsage || 0,
     last_push: data.pushedAt,
     has_contributing: hasContributing,
   };
@@ -596,11 +599,19 @@ export function searchRepos(opts: {
   activeDays?: number;
   limit?: number;
   topic?: string;
+  keywords?: string;
+  exclude?: string[];
 }): SearchRepoResult[] {
   const parts: string[] = ["search", "repos"];
 
   // Build query string (inline qualifiers) and flags
   const queryParts: string[] = [];
+
+  // Free-text keywords go first (GitHub search treats them as AND terms)
+  if (opts.keywords) {
+    queryParts.push(opts.keywords);
+  }
+
   const minStars = opts.minStars ?? 5;
   const maxStars = opts.maxStars ?? 5000;
   queryParts.push(`stars:${minStars}..${maxStars}`);
@@ -625,15 +636,19 @@ export function searchRepos(opts: {
   const data = ghJson(parts.join(" "));
   if (!Array.isArray(data)) return [];
 
-  return data.map((d: any) => ({
-    owner: d.owner?.login || d.owner || "",
-    repo: d.name || "",
-    description: d.description || "",
-    language: d.language || "Unknown",
-    stars: d.stargazersCount ?? 0,
-    forks: d.forksCount ?? 0,
-    lastPush: d.pushedAt || "",
-  }));
+  const excludeSet = new Set((opts.exclude || []).map(e => e.toLowerCase()));
+
+  return data
+    .map((d: any) => ({
+      owner: d.owner?.login || d.owner || "",
+      repo: d.name || "",
+      description: d.description || "",
+      language: d.language || "Unknown",
+      stars: d.stargazersCount ?? 0,
+      forks: d.forksCount ?? 0,
+      lastPush: d.pushedAt || "",
+    }))
+    .filter(r => !excludeSet.has(`${r.owner}/${r.repo}`.toLowerCase()));
 }
 
 /** Count open issues with a specific label */
