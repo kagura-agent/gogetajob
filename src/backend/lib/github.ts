@@ -108,8 +108,10 @@ export function getIssues(
 
 export function getPrStats(owner: string, repo: string, limit: number = 100): PrStats {
   // Get recent closed/merged PRs to calculate merge rate
+  // Use --state closed (includes merged) to avoid open PRs eating the limit.
+  // Repos with 100+ open PRs would otherwise report 0% merge rate.
   const prs = ghJson(
-    `pr list -R ${owner}/${repo} --state all --limit ${limit} --json number,state,mergedAt,closedAt,createdAt,reviews`
+    `pr list -R ${owner}/${repo} --state closed --limit ${limit} --json number,state,mergedAt,closedAt,createdAt,reviews`
   );
 
   if (!prs || prs.length === 0) {
@@ -222,8 +224,9 @@ export async function getIssuesAsync(
 }
 
 export async function getPrStatsAsync(owner: string, repo: string, limit: number = 100): Promise<PrStats> {
+  // Use --state closed (includes merged) to avoid open PRs eating the limit.
   const prs = await ghJsonA(
-    `pr list -R ${owner}/${repo} --state all --limit ${limit} --json number,state,mergedAt,closedAt,createdAt,reviews`
+    `pr list -R ${owner}/${repo} --state closed --limit ${limit} --json number,state,mergedAt,closedAt,createdAt,reviews`
   );
 
   if (!prs || prs.length === 0) {
