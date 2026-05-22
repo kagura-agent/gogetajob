@@ -135,7 +135,8 @@ program
   .command("scan [repo]")
   .description(
     "Scan a repo for open issues and add them as jobs (format: owner/repo)\n\n" +
-    "  Use --all to scan all known companies from the database.\n\n" +
+    "  Use --all to scan all known companies from the database.\n" +
+    "  Use --skip-recent 12 to skip repos scanned within 12 hours (great for cron).\n\n" +
     "  Finding repos to scan:\n" +
     "    gh search repos --topic=typescript --sort=stars --limit=10\n" +
     "    gh search repos --language=python --stars='>100' --limit=10\n" +
@@ -145,6 +146,7 @@ program
   .option("--label <label>", "only issues with this label")
   .option("--all", "scan all known companies from database")
   .option("--batch <n>", "only scan the first N repos (for cron/time-limited contexts)")
+  .option("--skip-recent <hours>", "skip repos scanned within N hours (use with --all)")
   .action(async (repoArg: string | undefined, opts: any) => {
     const svc = getService();
 
@@ -154,12 +156,25 @@ program
         console.log("\nNo companies in database. Add some with `gogetajob scan <owner/repo>`.\n");
         return;
       }
-      const batchSize = opts.batch ? Math.max(1, parseInt(opts.batch)) : companies.length;
-      const toScan = companies.slice(0, batchSize);
-      if (batchSize < companies.length) {
-        console.log(`\n🔍 Scanning first ${toScan.length} of ${companies.length} companies...\n`);
+      let filtered = companies;
+      const skipHours = opts.skipRecent ? Math.max(1, parseInt(opts.skipRecent)) : 0;
+      if (skipHours > 0) {
+        const cutoff = new Date(Date.now() - skipHours * 3600_000).toISOString();
+        filtered = companies.filter(c => !c.last_scanned_at || c.last_scanned_at < cutoff);
+        if (filtered.length < companies.length) {
+          console.log(`\n⏭️  Skipping ${companies.length - filtered.length} repos scanned within ${skipHours}h`);
+        }
+      }
+      const batchSize = opts.batch ? Math.max(1, parseInt(opts.batch)) : filtered.length;
+      const toScan = filtered.slice(0, batchSize);
+      if (toScan.length === 0) {
+        console.log(`\n✅ All ${companies.length} repos were scanned within ${skipHours}h. Nothing to do.\n`);
+        return;
+      }
+      if (batchSize < filtered.length) {
+        console.log(`\n🔍 Scanning first ${toScan.length} of ${filtered.length} companies...\n`);
       } else {
-        console.log(`\n🔍 Scanning all ${toScan.length} companies...\n`);
+        console.log(`\n🔍 Scanning ${toScan.length} companies...\n`);
       }
       for (const c of toScan) {
         try {
