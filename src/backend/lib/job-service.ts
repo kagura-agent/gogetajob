@@ -214,6 +214,18 @@ export class JobService {
     return closed;
   }
 
+  /** Update a single job's state (e.g. when feed --verify finds stale data) */
+  updateJobState(companyFullName: string, issueNumber: number, state: string): void {
+    const [owner, repo] = companyFullName.split("/");
+    const company = this.db.prepare(
+      "SELECT id FROM companies WHERE owner = $owner AND repo = $repo"
+    ).get({ owner, repo }) as { id: number } | undefined;
+    if (!company) return;
+    this.db.prepare(
+      "UPDATE jobs SET state = $state WHERE company_id = $company_id AND issue_number = $issue_number"
+    ).run({ state, company_id: company.id, issue_number: issueNumber });
+  }
+
   listJobs(filters: { lang?: string; type?: string; limit?: number; maxSizeMB?: number; noPr?: boolean } = {}): Job[] {
     const conditions: string[] = ["j.state = 'open'"];
     const params: Record<string, any> = {};
