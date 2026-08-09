@@ -177,10 +177,14 @@ program
         console.log(`\n🔍 Scanning ${toScan.length} companies...\n`);
       }
       for (const c of toScan) {
+        const startedAt = Date.now();
+        const heapStartMB = process.memoryUsage().heapUsed / (1024 * 1024);
+        let scanResult = "ok";
         try {
           const [owner, repo] = c.full_name.split("/");
           if (isBlocked(owner, repo)) {
             const reason = getBlockReason(owner, repo);
+            scanResult = "blocklisted";
             console.log(`⛔ ${c.full_name} is blocklisted${reason ? `: ${reason}` : ""}`);
             continue;
           }
@@ -216,7 +220,15 @@ program
           if (added > 0) console.log(`  📋 ${added} new issues`);
           console.log();
         } catch (e: any) {
+          scanResult = "failed";
           console.error(`  ⚠️ Failed: ${e.message}\n`);
+        } finally {
+          const heapEndMB = process.memoryUsage().heapUsed / (1024 * 1024);
+          const elapsedMs = Date.now() - startedAt;
+          console.log(
+            `  ⏱ scan-metric repo=${c.full_name} result=${scanResult} elapsed_ms=${elapsedMs} ` +
+            `heap_mb=${heapEndMB.toFixed(1)} heap_delta_mb=${(heapEndMB - heapStartMB).toFixed(1)}`
+          );
         }
       }
       console.log("Done!\n");
