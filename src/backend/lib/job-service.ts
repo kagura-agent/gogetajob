@@ -140,6 +140,20 @@ export class JobService {
     }));
   }
 
+  // --- Companies ---
+
+  /**
+   * Bump a company's last_scanned_at without touching any other fields.
+   * Used to advance `--skip-recent` rotation for repos that were blocklisted
+   * or failed during a scan, so they don't permanently occupy the batch front.
+   */
+  markCompanyScanned(owner: string, repo: string): void {
+    this.db.prepare(`
+      UPDATE companies SET last_scanned_at = datetime('now')
+      WHERE owner = $owner AND repo = $repo
+    `).run({ owner, repo });
+  }
+
   // --- Jobs ---
 
   upsertJob(companyId: number, data: {

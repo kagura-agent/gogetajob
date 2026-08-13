@@ -180,11 +180,12 @@ program
         const startedAt = Date.now();
         const heapStartMB = process.memoryUsage().heapUsed / (1024 * 1024);
         let scanResult = "ok";
+        const [owner, repo] = c.full_name.split("/");
         try {
-          const [owner, repo] = c.full_name.split("/");
           if (isBlocked(owner, repo)) {
             const reason = getBlockReason(owner, repo);
             scanResult = "blocklisted";
+            svc.markCompanyScanned(owner, repo);
             console.log(`⛔ ${c.full_name} is blocklisted${reason ? `: ${reason}` : ""}`);
             continue;
           }
@@ -221,6 +222,7 @@ program
           console.log();
         } catch (e: any) {
           scanResult = "failed";
+          svc.markCompanyScanned(owner, repo);
           console.error(`  ⚠️ Failed: ${e.message}\n`);
         } finally {
           const heapEndMB = process.memoryUsage().heapUsed / (1024 * 1024);
