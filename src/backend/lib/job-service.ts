@@ -1,4 +1,9 @@
 import Database from "better-sqlite3";
+import { getBlocklist } from "./blocklist";
+
+function getBlockedRepoFullNames(): string[] {
+  return getBlocklist().map((e) => e.repo);
+}
 
 export interface CompanyProfile {
   id: number;
@@ -259,6 +264,15 @@ export class JobService {
     }
     if (filters.noPr) {
       conditions.push("j.has_pr = 0");
+    }
+
+    // Exclude blocklisted repos from the feed (guide: blocklist is the
+    // authoritative gate, hit = never select, regardless of tier).
+    const blockedRepos = getBlockedRepoFullNames();
+    if (blockedRepos.length > 0) {
+      const placeholders = blockedRepos.map((_, i) => `$blk${i}`).join(",");
+      conditions.push(`LOWER(c.full_name) NOT IN (${placeholders})`);
+      blockedRepos.forEach((r, i) => (params[`blk${i}`] = r.toLowerCase()));
     }
 
     params.limit = filters.limit ?? 20;
