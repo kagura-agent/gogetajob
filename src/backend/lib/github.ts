@@ -615,6 +615,12 @@ export function searchRepos(opts: {
     queryParts.push(opts.keywords);
   }
 
+  // topic: MUST come before numeric qualifiers — GitHub search silently
+  // drops the topic qualifier when it appears after stars:/pushed:
+  // (verified 2026-08-17: "stars:100..5000 topic:ai-agent" returns the same
+  // repos as "stars:100..5000" alone; "topic:ai-agent stars:100..5000" filters).
+  if (opts.topic) queryParts.push(`topic:${opts.topic}`);
+
   const minStars = opts.minStars ?? 5;
   const maxStars = opts.maxStars ?? 5000;
   queryParts.push(`stars:${minStars}..${maxStars}`);
@@ -622,7 +628,6 @@ export function searchRepos(opts: {
     const since = new Date(Date.now() - opts.activeDays * 86400000).toISOString().split("T")[0];
     queryParts.push(`pushed:>=${since}`);
   }
-  if (opts.topic) queryParts.push(`topic:${opts.topic}`);
 
   // Query goes as a quoted argument
   parts.push(`"${queryParts.join(" ")}"`);
