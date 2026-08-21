@@ -159,6 +159,64 @@ export class JobService {
     `).run({ owner, repo });
   }
 
+  /**
+   * Merge a duplicate company row (created when a repo was renamed) into its
+   * canonical row. GitHub 301-redirects renamed repos, so scanning the old
+   * name inserts a fresh row while the canonical row still exists — both then
+   * accumulate the same issues, and the feed budget gets consumed by
+   * duplicate jobs. This moves all jobs/work_log entries to the canonical
+   * row, keeps the newest metadata, and deletes the stale row.
+   *
+   * Returns the surviving company id, or 0 if neither row matched.
+   */
+  mergeCompany(canonicalFullName: string, staleFullName: string): number {
+    const [canonicalOwner, canonicalRepo] = canonicalFullName.split("/");
+    const [staleOwner, staleRepo] = staleFullName.split("/");
+    const canonical = this.db.prepare(
+      "SELECT id FROM companies WHERE owner = $o AND repo = $r"
+    ).get({ o: canonicalOwner, r: canonicalRepo }) as { id: number } | undefined;
+    const stale = this.db.prepare(
+      "SELECT id FROM companies WHERE owner = $o AND repo = $r"
+    ).get({ o: staleOwner, r: staleRepo }) as { id: number } | undefined;
+    if (!canonical || !stale || canonical.id === stale.id) {
+      return canonical?.id ?? 0;
+    }
+
+    const tx = this.db.transaction(() => {
+      // 1. Move non-duplicate jobs to the canonical row (dedup on
+      //    issue_number, keep the canonical row's version of exact dupes).
+      //    After this step, the only jobs still owned by the stale row are
+      //    exact duplicates of canonical jobs.
+      this.db.prepare(`
+        UPDATE jobs SET company_id = $canonicalId
+        WHERE company_id = $staleId
+          AND issue_number NOT IN (
+            SELECT issue_number FROM jobs WHERE company_id = $canonicalId
+          )
+      `).run({ canonicalId: canonical.id, staleId: stale.id });
+      // 2. Re-point work_log entries that referenced the now-duplicate stale
+      //    jobs to the canonical job with the same issue_number (which is
+      //    guaranteed to exist by step 1). Moved jobs keep their id, so their
+      //    work_log links are already valid.
+      this.db.prepare(`
+        UPDATE work_log SET job_id = (
+          SELECT jc.id FROM jobs jc
+          WHERE jc.company_id = $canonicalId
+            AND jc.issue_number = (
+              SELECT js.issue_number FROM jobs js WHERE js.id = work_log.job_id
+            )
+        )
+        WHERE job_id IN (SELECT id FROM jobs WHERE company_id = $staleId)
+      `).run({ canonicalId: canonical.id, staleId: stale.id });
+      // 3. Drop the remaining (exact-duplicate) stale jobs.
+      this.db.prepare("DELETE FROM jobs WHERE company_id = $staleId").run({ staleId: stale.id });
+      // 4. Delete the stale company row.
+      this.db.prepare("DELETE FROM companies WHERE id = $staleId").run({ staleId: stale.id });
+    });
+    tx();
+    return canonical.id;
+  }
+
   // --- Jobs ---
 
   upsertJob(companyId: number, data: {

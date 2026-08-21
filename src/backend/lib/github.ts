@@ -58,7 +58,7 @@ function ghJson(args: string): any {
 
 export function getRepoInfo(owner: string, repo: string): RepoInfo {
   const data = ghJson(
-    `repo view ${owner}/${repo} --json name,description,primaryLanguage,stargazerCount,forkCount,issues,pushedAt,diskUsage`
+    `repo view ${owner}/${repo} --json name,owner,description,primaryLanguage,stargazerCount,forkCount,issues,pushedAt,diskUsage`
   );
 
   // Check if CONTRIBUTING.md exists
@@ -68,9 +68,13 @@ export function getRepoInfo(owner: string, repo: string): RepoInfo {
     hasContributing = true;
   } catch {}
 
+  // gh repo view follows 301 redirects for renamed repos, so `name` and
+  // `owner.login` are the *canonical* identity. Returning them here lets
+  // callers detect renames and merge duplicate DB rows instead of letting
+  // stale (pre-rename) rows accumulate a parallel set of jobs.
   return {
-    owner,
-    repo,
+    owner: data.owner?.login || owner,
+    repo: data.name || repo,
     description: data.description || "",
     language: data.primaryLanguage?.name || "Unknown",
     stars: data.stargazerCount,
@@ -176,7 +180,7 @@ async function ghJsonA(args: string): Promise<any> {
 
 export async function getRepoInfoAsync(owner: string, repo: string): Promise<RepoInfo> {
   const data = await ghJsonA(
-    `repo view ${owner}/${repo} --json name,description,primaryLanguage,stargazerCount,forkCount,issues,pushedAt,diskUsage`
+    `repo view ${owner}/${repo} --json name,owner,description,primaryLanguage,stargazerCount,forkCount,issues,pushedAt,diskUsage`
   );
 
   let hasContributing = false;
@@ -186,8 +190,8 @@ export async function getRepoInfoAsync(owner: string, repo: string): Promise<Rep
   } catch {}
 
   return {
-    owner,
-    repo,
+    owner: data.owner?.login || owner,
+    repo: data.name || repo,
     description: data.description || "",
     language: data.primaryLanguage?.name || "Unknown",
     stars: data.stargazerCount,

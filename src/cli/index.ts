@@ -200,13 +200,23 @@ program
             avg_response_hours: prStats.avg_response_hours !== null ? prStats.avg_response_hours : undefined,
             has_contributing_guide: info.has_contributing, last_commit_at: info.last_push,
           });
+          // Renamed repos: gh follows the 301 and returns the canonical name.
+          // Merge the stale (pre-rename) row into the canonical one so the
+          // feed doesn't see duplicate jobs from both rows (2026-08-21:
+          // hermes-web-ui → hermes-studio double-scanned 683 issues).
+          const canonicalFullName = `${info.owner}/${info.repo}`;
+          let companyId = c.id;
+          if (canonicalFullName !== c.full_name) {
+            companyId = svc.mergeCompany(canonicalFullName, c.full_name);
+            console.log(`  🔄 renamed → ${canonicalFullName} (merged company #${companyId})`);
+          }
           console.log(`  ⭐ ${info.stars} stars | 📊 ${(prStats.merge_rate * 100).toFixed(0)}% merge rate`);
           const issues = gh.getIssues(owner, repo, { limit: 50, labels: opts.label });
           let added = 0;
           const openIssueNumbers = new Set<number>();
           for (const issue of issues) {
             openIssueNumbers.add(issue.number);
-            const wasAdded = svc.upsertJob(c.id, {
+            const wasAdded = svc.upsertJob(companyId, {
               issue_number: issue.number,
               title: issue.title,
               body: issue.body,
@@ -217,7 +227,7 @@ program
             });
             if (wasAdded) added++;
           }
-          svc.closeStaleJobs(c.id, openIssueNumbers);
+          svc.closeStaleJobs(companyId, openIssueNumbers);
           if (added > 0) console.log(`  📋 ${added} new issues`);
           console.log();
         } catch (e: any) {
@@ -274,6 +284,16 @@ program
       has_contributing_guide: info.has_contributing,
       last_commit_at: info.last_push,
     });
+
+    // Renamed repos: gh follows the 301 and returns the canonical name.
+    // Merge the stale (pre-rename) row into the canonical one so the feed
+    // doesn't see duplicate jobs from both rows (2026-08-21: hermes-web-ui
+    // → hermes-studio double-scanned 683 issues).
+    const canonicalFullName = `${info.owner}/${info.repo}`;
+    if (canonicalFullName !== `${owner}/${repo}`) {
+      svc.mergeCompany(canonicalFullName, `${owner}/${repo}`);
+      console.log(`  🔄 renamed → ${canonicalFullName} (merged duplicate rows)`);
+    }
 
     console.log(`  ⭐ ${info.stars} stars | 📊 ${(prStats.merge_rate * 100).toFixed(0)}% merge rate | ${prStats.total} PRs analyzed`);
 
@@ -486,6 +506,15 @@ program
             has_contributing_guide: info.has_contributing,
             last_commit_at: info.last_push,
           });
+
+          // Renamed repos: gh follows the 301 and returns the canonical name.
+          // Merge the stale (pre-rename) row into the canonical one so the
+          // feed doesn't see duplicate jobs from both rows.
+          const canonicalFullName = `${info.owner}/${info.repo}`;
+          if (canonicalFullName !== `${r.owner}/${r.repo}`) {
+            svc.mergeCompany(canonicalFullName, `${r.owner}/${r.repo}`);
+            console.log(`  🔄 renamed → ${canonicalFullName} (merged duplicate rows)`);
+          }
 
           const issues = gh.getIssues(r.owner, r.repo, { limit: 50 });
           let added = 0;
