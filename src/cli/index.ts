@@ -419,6 +419,19 @@ program
       const daysSinceLastCommit = candidate.lastPush
         ? (Date.now() - new Date(candidate.lastPush).getTime()) / 86400000
         : 30;
+
+      // Hard dormant gate: a repo whose last push is >30 days old cannot be
+      // selected regardless of score. The finder's feed (workloop-find-issue.sh)
+      // only surfaces repos with commits in the last 30 days, so soft-scoring a
+      // dormant repo here means discover adds it but the feed permanently hides
+      // it — the repo burns scan effort and every followup round re-notes
+      // "should surface next round" while never actually surfacing
+      // (2026-08-23: voideditor/void 28.8K★ with last push 82d ago was added
+      // by discover, then invisible in the feed for 4 rounds).
+      if (candidate.lastPush && daysSinceLastCommit > 30) {
+        continue;
+      }
+
       const score =
         goodFirstIssues * 2 +
         helpWantedIssues +
